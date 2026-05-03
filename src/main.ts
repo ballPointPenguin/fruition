@@ -19,6 +19,8 @@ const config = {
   fruitRadiusScale: 1.18,
   gravitySpeed: 980,
   dropCooldownMs: 150,
+  mergeContactSlop: 0.75,
+  maxCascadeMerges: 24,
   wallBounce: 0.08,
   floorBounce: 0.04,
   collisionDamping: 0.34,
@@ -36,7 +38,7 @@ app.innerHTML = `
     <section class="game-copy" aria-labelledby="title">
       <p class="eyebrow">first playable prototype</p>
       <h1 id="title">fruition</h1>
-      <p class="lede">Click or tap inside the box to drop a randomly sized plain circle. No merging, no score, just a jar slowly filling with fruit-shaped math.</p>
+      <p class="lede">Click or tap inside the box to drop a randomly sized plain circle. Matching sizes merge upward, while the biggest pair clears space.</p>
     </section>
 
     <section class="game-stage" aria-label="fruition prototype">
@@ -121,6 +123,8 @@ function step(deltaSeconds: number) {
       fruit.vx = 0
     }
   }
+
+  resolveMerges()
 }
 
 function resolveWalls(fruit: Fruit) {
@@ -180,6 +184,85 @@ function resolveFruitPair(a: Fruit, b: Fruit) {
   a.vy -= impulseY
   b.vx += impulseX
   b.vy += impulseY
+}
+
+function resolveMerges() {
+  let cascadeCount = 0
+  let mergePairs = findMergePairs()
+
+  while (mergePairs.length > 0 && cascadeCount < config.maxCascadeMerges) {
+    const mergedFruits: Fruit[] = []
+    const removedFruitIds = new Set<number>()
+
+    for (const [a, b] of mergePairs) {
+      removedFruitIds.add(a.id)
+      removedFruitIds.add(b.id)
+
+      if (a.level < config.fruitLevels) {
+        mergedFruits.push(createMergedFruit(a, b))
+      }
+    }
+
+    const remainingFruits = fruits.filter((fruit) => !removedFruitIds.has(fruit.id))
+    fruits.length = 0
+    fruits.push(...remainingFruits, ...mergedFruits)
+
+    cascadeCount += 1
+    mergePairs = findMergePairs()
+  }
+
+  updateCount()
+}
+
+function findMergePairs(): Array<[Fruit, Fruit]> {
+  const pairs: Array<[Fruit, Fruit]> = []
+  const usedFruitIds = new Set<number>()
+
+  for (let i = 0; i < fruits.length; i += 1) {
+    const a = fruits[i]
+
+    if (usedFruitIds.has(a.id)) {
+      continue
+    }
+
+    for (let j = i + 1; j < fruits.length; j += 1) {
+      const b = fruits[j]
+
+      if (usedFruitIds.has(b.id) || a.level !== b.level) {
+        continue
+      }
+
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const contactDistance = a.radius + b.radius + config.mergeContactSlop
+
+      if (Math.hypot(dx, dy) <= contactDistance) {
+        pairs.push([a, b])
+        usedFruitIds.add(a.id)
+        usedFruitIds.add(b.id)
+        break
+      }
+    }
+  }
+
+  return pairs
+}
+
+function createMergedFruit(a: Fruit, b: Fruit): Fruit {
+  const nextLevel = a.level + 1
+  const radius = radiusForFruitLevel(nextLevel)
+  const x = clamp((a.x + b.x) / 2, radius, canvas.width - radius)
+  const y = clamp((a.y + b.y) / 2, radius, canvas.height - radius)
+
+  return {
+    id: nextFruitId++,
+    level: nextLevel,
+    x,
+    y,
+    vx: (a.vx + b.vx) * 0.28,
+    vy: (a.vy + b.vy) * 0.28,
+    radius,
+  }
 }
 
 function render() {
