@@ -2,6 +2,7 @@ import './style.css'
 
 type Fruit = {
   id: number
+  level: number
   x: number
   y: number
   vx: number
@@ -12,7 +13,10 @@ type Fruit = {
 const config = {
   playWidth: 420,
   playHeight: 620,
-  fruitRadius: 18,
+  fruitLevels: 11,
+  generatedFruitLevels: 5,
+  baseFruitRadius: 14,
+  fruitRadiusScale: 1.18,
   gravitySpeed: 980,
   dropCooldownMs: 150,
   wallBounce: 0.08,
@@ -32,7 +36,7 @@ app.innerHTML = `
     <section class="game-copy" aria-labelledby="title">
       <p class="eyebrow">first playable prototype</p>
       <h1 id="title">fruition</h1>
-      <p class="lede">Click or tap inside the box to drop a plain circle. Same size, no merging, no score, just a jar slowly filling with marbles.</p>
+      <p class="lede">Click or tap inside the box to drop a randomly sized plain circle. No merging, no score, just a jar slowly filling with fruit-shaped math.</p>
     </section>
 
     <section class="game-stage" aria-label="fruition prototype">
@@ -66,11 +70,13 @@ function addFruit(clientX: number) {
 
   const rect = canvas.getBoundingClientRect()
   const scaleX = canvas.width / rect.width
-  const radius = config.fruitRadius
+  const level = randomDropLevel()
+  const radius = radiusForFruitLevel(level)
   const x = clamp((clientX - rect.left) * scaleX, radius, canvas.width - radius)
 
   fruits.push({
     id: nextFruitId++,
+    level,
     x,
     y: radius + 8,
     vx: 0,
@@ -223,6 +229,15 @@ function drawFruit(fruit: Fruit) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function randomDropLevel() {
+  return 1 + Math.floor(Math.random() * config.generatedFruitLevels)
+}
+
+function radiusForFruitLevel(level: number) {
+  const clampedLevel = clamp(Math.round(level), 1, config.fruitLevels)
+  return Math.round(config.baseFruitRadius * config.fruitRadiusScale ** (clampedLevel - 1))
 }
 
 function requiredElement<T extends Element>(selector: string): T {
