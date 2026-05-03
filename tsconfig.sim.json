@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": ".sim-dist",
+    "rootDir": "."
+  },
+  "include": ["src/simulation.ts", "scripts/firehose.ts"]
+}

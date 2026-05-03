@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "simulate": "tsc -p tsconfig.sim.json && node .sim-dist/scripts/firehose.js"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
