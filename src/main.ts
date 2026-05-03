@@ -25,7 +25,9 @@ const config = {
 	baseFruitRadius: 14,
 	fruitRadiusScale: 1.3,
 	gravitySpeed: 980,
-	dropCooldownMs: 150,
+	dropCooldownMs: 350,
+	gameOverOverhangLimit: 50,
+	warningOverhang: 0,
 	mergeContactSlop: 1,
 	maxCascadeMerges: 24,
 	wallBounce: 0.08,
@@ -80,7 +82,13 @@ app.innerHTML = `
           <div id="next-preview" class="fruit-preview"></div>
         </div>
       </div>
-      <canvas id="playfield" width="${config.playWidth}" height="${config.playHeight}" aria-label="clickable play area"></canvas>
+      <div id="playfield-wrap" class="playfield-wrap">
+        <canvas id="playfield" width="${config.playWidth}" height="${config.playHeight}" aria-label="clickable play area"></canvas>
+        <div id="game-over" class="game-over" hidden>
+          <strong>Game over</strong>
+          <span>Reset to try again</span>
+        </div>
+      </div>
     </section>
   </main>
 `;
@@ -90,6 +98,7 @@ const resetButton = requiredElement<HTMLButtonElement>("#reset");
 const countLabel = requiredElement<HTMLSpanElement>("#fruit-count");
 const currentPreview = requiredElement<HTMLDivElement>("#current-preview");
 const nextPreview = requiredElement<HTMLDivElement>("#next-preview");
+const gameOverOverlay = requiredElement<HTMLDivElement>("#game-over");
 const context = requiredCanvasContext(canvas);
 
 const fruits: Fruit[] = [];
@@ -98,11 +107,22 @@ let previousTime = performance.now();
 let lastDropTime = -config.dropCooldownMs;
 let currentDropLevel = randomDropLevel();
 let nextDropLevel = randomDropLevel();
+let isGameOver = false;
+let isOverhangWarningActive = false;
 
 function addFruit(clientX: number) {
+	if (isGameOver) {
+		return;
+	}
+
 	const now = performance.now();
 
 	if (now - lastDropTime < config.dropCooldownMs) {
+		return;
+	}
+
+	if (outOfBoundsOverhang() >= config.gameOverOverhangLimit) {
+		endGame();
 		return;
 	}
 
@@ -137,7 +157,9 @@ function addFruit(clientX: number) {
 
 function updateCount() {
 	const noun = fruits.length === 1 ? "fruit" : "fruits";
-	countLabel.textContent = `${fruits.length} ${noun}`;
+	countLabel.textContent = isGameOver
+		? "Game over"
+		: `${fruits.length} ${noun}`;
 }
 
 function step(deltaSeconds: number) {
@@ -171,6 +193,7 @@ function step(deltaSeconds: number) {
 	}
 
 	resolveMerges();
+	updateOverhangWarning();
 }
 
 function resolveWalls(fruit: Fruit) {
@@ -298,6 +321,23 @@ function resolveMerges() {
 	updateCount();
 }
 
+function endGame() {
+	isGameOver = true;
+	gameOverOverlay.hidden = false;
+	canvas.classList.add("is-game-over");
+	updateOverhangWarning();
+	updateCount();
+}
+
+function outOfBoundsOverhang() {
+	const bounds = playBounds();
+
+	return fruits.reduce((total, fruit) => {
+		const fruitTop = fruit.y - fruit.radius;
+		return total + Math.max(0, bounds.top - fruitTop);
+	}, 0);
+}
+
 function findMergePairs(): Array<[Fruit, Fruit]> {
 	const pairs: Array<[Fruit, Fruit]> = [];
 	const usedFruitIds = new Set<number>();
@@ -382,7 +422,7 @@ function drawPlayfieldOverlay() {
 	context.stroke();
 	context.setLineDash([]);
 
-	context.strokeStyle = "#363127";
+	context.strokeStyle = isOverhangWarningActive ? "#dc2626" : "#363127";
 	context.lineWidth = 4;
 	context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
 }
@@ -504,6 +544,11 @@ resetButton.addEventListener("click", () => {
 	lastDropTime = -config.dropCooldownMs;
 	currentDropLevel = randomDropLevel();
 	nextDropLevel = randomDropLevel();
+	isGameOver = false;
+	isOverhangWarningActive = false;
+	gameOverOverlay.hidden = true;
+	canvas.classList.remove("is-game-over");
+	canvas.classList.remove("has-overhang-warning");
 	updateCount();
 	updatePreviews();
 });
@@ -513,3 +558,15 @@ window.addEventListener("resize", updatePreviews);
 updateCount();
 updatePreviews();
 requestAnimationFrame(gameLoop);
+
+function updateOverhangWarning() {
+	const shouldWarn =
+		!isGameOver && outOfBoundsOverhang() > config.warningOverhang;
+
+	if (shouldWarn === isOverhangWarningActive) {
+		return;
+	}
+
+	isOverhangWarningActive = shouldWarn;
+	canvas.classList.toggle("has-overhang-warning", shouldWarn);
+}

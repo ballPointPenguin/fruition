@@ -184,6 +184,49 @@ h1 {
   cursor: crosshair;
 }
 
+.playfield-wrap {
+  position: relative;
+}
+
+#playfield.is-game-over {
+  cursor: default;
+  filter: saturate(0.72);
+}
+
+#playfield.has-overhang-warning {
+  box-shadow:
+    0 0 0 4px rgba(220, 38, 38, 0.18),
+    0 18px 40px rgba(84, 69, 42, 0.2),
+    0 4px 0 rgba(46, 41, 34, 0.18);
+}
+
+.game-over {
+  position: absolute;
+  inset: 4px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  color: #ffffff;
+  background: rgba(33, 31, 27, 0.62);
+  border-radius: 2px;
+}
+
+.game-over[hidden] {
+  display: none;
+}
+
+.game-over strong {
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.game-over span {
+  font-size: 0.95rem;
+  font-weight: 800;
+  opacity: 0.86;
+}
+
 @media (max-width: 780px) {
   .game-shell {
     padding: 22px;
