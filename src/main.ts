@@ -16,6 +16,11 @@ type FruitStyle = {
 	stroke: string;
 };
 
+type HighScore = {
+	score: number;
+	date: string;
+};
+
 const config = {
 	playWidth: 420,
 	playHeight: 620,
@@ -41,6 +46,8 @@ const config = {
 	contactLiftImpulse: 14,
 	solverPasses: 5,
 };
+
+const highScoreStorageKey = "fruition.highScores.v1";
 
 const fruitStyles: FruitStyle[] = [
 	{ name: "red", fill: "#ef4444", stroke: "#991b1b" },
@@ -72,8 +79,15 @@ app.innerHTML = `
 
     <section class="game-stage" aria-label="fruition prototype">
       <div class="hud">
-        <span id="fruit-count">0 fruits</span>
+        <div class="hud-stats">
+          <span id="fruit-count">0 fruits</span>
+          <span id="score">0 pts</span>
+        </div>
         <button id="reset" type="button">Reset</button>
+      </div>
+      <div class="scoreboard" aria-label="top scores">
+        <span>top</span>
+        <ol id="high-scores"></ol>
       </div>
       <div class="drop-previews" aria-label="upcoming fruit">
         <div id="current-preview" class="fruit-preview current-preview" aria-label="current fruit"></div>
@@ -86,7 +100,7 @@ app.innerHTML = `
         <canvas id="playfield" width="${config.playWidth}" height="${config.playHeight}" aria-label="clickable play area"></canvas>
         <div id="game-over" class="game-over" hidden>
           <strong>Game over</strong>
-          <span>Reset to try again</span>
+          <span id="game-over-note">Reset to try again</span>
         </div>
       </div>
     </section>
@@ -96,9 +110,12 @@ app.innerHTML = `
 const canvas = requiredElement<HTMLCanvasElement>("#playfield");
 const resetButton = requiredElement<HTMLButtonElement>("#reset");
 const countLabel = requiredElement<HTMLSpanElement>("#fruit-count");
+const scoreLabel = requiredElement<HTMLSpanElement>("#score");
+const highScoresList = requiredElement<HTMLOListElement>("#high-scores");
 const currentPreview = requiredElement<HTMLDivElement>("#current-preview");
 const nextPreview = requiredElement<HTMLDivElement>("#next-preview");
 const gameOverOverlay = requiredElement<HTMLDivElement>("#game-over");
+const gameOverNote = requiredElement<HTMLSpanElement>("#game-over-note");
 const context = requiredCanvasContext(canvas);
 
 const fruits: Fruit[] = [];
@@ -109,6 +126,8 @@ let currentDropLevel = randomDropLevel();
 let nextDropLevel = randomDropLevel();
 let isGameOver = false;
 let isOverhangWarningActive = false;
+let score = 0;
+let highScores = loadHighScores();
 
 function addFruit(clientX: number) {
 	if (isGameOver) {
@@ -139,7 +158,7 @@ function addFruit(clientX: number) {
 		bounds.right - radius,
 	);
 
-	fruits.push({
+	const fruit = {
 		id: nextFruitId++,
 		level,
 		x,
@@ -147,7 +166,10 @@ function addFruit(clientX: number) {
 		vx: 0,
 		vy: 0,
 		radius,
-	});
+	};
+
+	fruits.push(fruit);
+	addScoreForFruit(fruit);
 
 	currentDropLevel = nextDropLevel;
 	nextDropLevel = randomDropLevel();
@@ -160,6 +182,16 @@ function updateCount() {
 	countLabel.textContent = isGameOver
 		? "Game over"
 		: `${fruits.length} ${noun}`;
+}
+
+function updateScore() {
+	scoreLabel.textContent = `${formatScore(score)} pts`;
+}
+
+function updateHighScores() {
+	highScoresList.innerHTML = highScores
+		.map((entry) => `<li>${formatScore(entry.score)}</li>`)
+		.join("");
 }
 
 function step(deltaSeconds: number) {
@@ -304,7 +336,9 @@ function resolveMerges() {
 			removedFruitIds.add(b.id);
 
 			if (a.level < config.fruitLevels) {
-				mergedFruits.push(createMergedFruit(a, b));
+				const mergedFruit = createMergedFruit(a, b);
+				mergedFruits.push(mergedFruit);
+				addScoreForFruit(mergedFruit);
 			}
 		}
 
@@ -322,9 +356,14 @@ function resolveMerges() {
 }
 
 function endGame() {
+	const highScoreRank = admitHighScore(score);
+
 	isGameOver = true;
 	gameOverOverlay.hidden = false;
 	canvas.classList.add("is-game-over");
+	gameOverNote.textContent = highScoreRank
+		? `New top ${highScoreRank}! ${formatScore(score)} pts`
+		: `Final score: ${formatScore(score)}`;
 	updateOverhangWarning();
 	updateCount();
 }
@@ -336,6 +375,42 @@ function outOfBoundsOverhang() {
 		const fruitTop = fruit.y - fruit.radius;
 		return total + Math.max(0, bounds.top - fruitTop);
 	}, 0);
+}
+
+function addScoreForFruit(fruit: Fruit) {
+	score += scoreForRadius(fruit.radius);
+	updateScore();
+}
+
+function scoreForRadius(radius: number) {
+	return Math.round(Math.PI * radius ** 2);
+}
+
+function admitHighScore(finalScore: number) {
+	if (finalScore <= 0) {
+		return null;
+	}
+
+	const qualifies =
+		highScores.length < 3 || finalScore > highScores[highScores.length - 1].score;
+
+	if (!qualifies) {
+		return null;
+	}
+
+	const entry = {
+		score: finalScore,
+		date: new Date().toISOString(),
+	};
+
+	highScores = [...highScores, entry]
+		.sort((a, b) => b.score - a.score)
+		.slice(0, 3);
+
+	saveHighScores(highScores);
+	updateHighScores();
+
+	return highScores.indexOf(entry) + 1;
 }
 
 function findMergePairs(): Array<[Fruit, Fruit]> {
@@ -503,6 +578,53 @@ function updatePreview(element: HTMLElement, level: number) {
 	element.setAttribute("aria-label", `${style.name} level ${level} fruit`);
 }
 
+function formatScore(value: number) {
+	return value.toLocaleString("en-US");
+}
+
+function loadHighScores() {
+	try {
+		const storedScores = localStorage.getItem(highScoreStorageKey);
+
+		if (!storedScores) {
+			return [];
+		}
+
+		const parsedScores = JSON.parse(storedScores);
+
+		if (!Array.isArray(parsedScores)) {
+			return [];
+		}
+
+		return parsedScores
+			.filter(isHighScore)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 3);
+	} catch {
+		return [];
+	}
+}
+
+function saveHighScores(scores: HighScore[]) {
+	try {
+		localStorage.setItem(highScoreStorageKey, JSON.stringify(scores));
+	} catch {
+		// Scoring still works when storage is unavailable.
+	}
+}
+
+function isHighScore(value: unknown): value is HighScore {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"score" in value &&
+		"date" in value &&
+		typeof value.score === "number" &&
+		Number.isFinite(value.score) &&
+		typeof value.date === "string"
+	);
+}
+
 function requiredElement<T extends Element>(selector: string): T {
 	const element = document.querySelector<T>(selector);
 
@@ -541,6 +663,7 @@ canvas.addEventListener("pointerdown", (event) => {
 resetButton.addEventListener("click", () => {
 	fruits.length = 0;
 	nextFruitId = 1;
+	score = 0;
 	lastDropTime = -config.dropCooldownMs;
 	currentDropLevel = randomDropLevel();
 	nextDropLevel = randomDropLevel();
@@ -550,12 +673,15 @@ resetButton.addEventListener("click", () => {
 	canvas.classList.remove("is-game-over");
 	canvas.classList.remove("has-overhang-warning");
 	updateCount();
+	updateScore();
 	updatePreviews();
 });
 
 window.addEventListener("resize", updatePreviews);
 
 updateCount();
+updateScore();
+updateHighScores();
 updatePreviews();
 requestAnimationFrame(gameLoop);
 
