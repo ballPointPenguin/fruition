@@ -109,6 +109,12 @@ h1 {
   line-height: 1.05;
 }
 
+.hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .scoreboard {
   min-height: 26px;
   display: flex;
@@ -140,7 +146,8 @@ h1 {
   text-transform: none;
 }
 
-#reset {
+#reset,
+#firehose {
   min-height: 40px;
   padding: 0 18px;
   border: 2px solid var(--accent-dark);
@@ -149,6 +156,12 @@ h1 {
   background: var(--accent);
   box-shadow: 0 3px 0 var(--accent-dark);
   cursor: pointer;
+}
+
+#firehose {
+  padding-inline: 12px;
+  color: var(--accent-dark);
+  background: rgba(255, 250, 240, 0.74);
 }
 
 .drop-previews {
@@ -198,16 +211,21 @@ h1 {
   text-transform: uppercase;
 }
 
-#reset:hover {
+#reset:hover,
+#firehose:hover,
+#firehose.is-active {
   background: #358e70;
+  color: #ffffff;
 }
 
-#reset:active {
+#reset:active,
+#firehose:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 var(--accent-dark);
 }
 
 #reset:focus-visible,
+#firehose:focus-visible,
 #playfield:focus-visible {
   outline: 3px solid rgba(47, 125, 99, 0.42);
   outline-offset: 3px;

@@ -8,6 +8,7 @@ type Fruit = {
 	vx: number;
 	vy: number;
 	radius: number;
+	bornAt: number;
 };
 
 type FruitStyle = {
@@ -19,6 +20,16 @@ type FruitStyle = {
 type HighScore = {
 	score: number;
 	date: string;
+};
+
+type MergeEffect = {
+	id: number;
+	x: number;
+	y: number;
+	radius: number;
+	style: FruitStyle;
+	startedAt: number;
+	duration: number;
 };
 
 const config = {
@@ -44,6 +55,13 @@ const config = {
 	verticalContactThreshold: 0.16,
 	contactSideImpulse: 44,
 	contactLiftImpulse: 14,
+	fruitDrag: 0.01,
+	maxFruitMass: 42,
+	verticalDamping: 0.996,
+	sleepSpeed: 2.5,
+	settleNudge: 0.006,
+	mergePopDuration: 260,
+	mergeBurstDuration: 360,
 	solverPasses: 5,
 };
 
@@ -83,7 +101,10 @@ app.innerHTML = `
           <span id="fruit-count">0 fruits</span>
           <span id="score">0 pts</span>
         </div>
-        <button id="reset" type="button">Reset</button>
+        <div class="hud-actions">
+          <button id="firehose" type="button" aria-pressed="false">Firehose</button>
+          <button id="reset" type="button">Reset</button>
+        </div>
       </div>
       <div class="scoreboard" aria-label="top scores">
         <span>top</span>
@@ -109,6 +130,7 @@ app.innerHTML = `
 
 const canvas = requiredElement<HTMLCanvasElement>("#playfield");
 const resetButton = requiredElement<HTMLButtonElement>("#reset");
+const firehoseButton = requiredElement<HTMLButtonElement>("#firehose");
 const countLabel = requiredElement<HTMLSpanElement>("#fruit-count");
 const scoreLabel = requiredElement<HTMLSpanElement>("#score");
 const highScoresList = requiredElement<HTMLOListElement>("#high-scores");
@@ -119,7 +141,9 @@ const gameOverNote = requiredElement<HTMLSpanElement>("#game-over-note");
 const context = requiredCanvasContext(canvas);
 
 const fruits: Fruit[] = [];
+const mergeEffects: MergeEffect[] = [];
 let nextFruitId = 1;
+let nextEffectId = 1;
 let previousTime = performance.now();
 let lastDropTime = -config.dropCooldownMs;
 let currentDropLevel = randomDropLevel();
@@ -128,6 +152,8 @@ let isGameOver = false;
 let isOverhangWarningActive = false;
 let score = 0;
 let highScores = loadHighScores();
+let isFirehoseActive = false;
+let lastFirehoseDropTime = 0;
 
 function addFruit(clientX: number) {
 	if (isGameOver) {
@@ -146,7 +172,10 @@ function addFruit(clientX: number) {
 	}
 
 	lastDropTime = now;
+	dropFruitAt(clientX);
+}
 
+function dropFruitAt(clientX: number) {
 	const rect = canvas.getBoundingClientRect();
 	const scaleX = canvas.width / rect.width;
 	const level = currentDropLevel;
@@ -166,6 +195,7 @@ function addFruit(clientX: number) {
 		vx: 0,
 		vy: 0,
 		radius,
+		bornAt: performance.now(),
 	};
 
 	fruits.push(fruit);
@@ -195,6 +225,8 @@ function updateHighScores() {
 }
 
 function step(deltaSeconds: number) {
+	maybeRunFirehose();
+
 	const dt = Math.min(deltaSeconds, 1 / 30);
 
 	for (const fruit of fruits) {
@@ -218,12 +250,18 @@ function step(deltaSeconds: number) {
 	}
 
 	for (const fruit of fruits) {
-		fruit.vx *= 0.995;
+		fruit.vx *= dragForFruit(fruit);
+		fruit.vy *= config.verticalDamping;
 		if (Math.abs(fruit.vx) < 0.02) {
 			fruit.vx = 0;
 		}
+		if (Math.abs(fruit.vy) < config.sleepSpeed && isFruitSupported(fruit)) {
+			fruit.vy = 0;
+		}
 	}
 
+	applySettlingPressure();
+	pruneMergeEffects();
 	resolveMerges();
 	updateOverhangWarning();
 }
@@ -269,12 +307,14 @@ function resolveFruitPair(a: Fruit, b: Fruit) {
 	const normalX = distance === 0 ? 1 : dx / distance;
 	const normalY = distance === 0 ? 0 : dy / distance;
 	const overlap = minDistance - distance;
-	const correction = overlap / 2;
+	const inverseMassA = inverseMassForFruit(a);
+	const inverseMassB = inverseMassForFruit(b);
+	const inverseMassTotal = inverseMassA + inverseMassB;
 
-	a.x -= normalX * correction;
-	a.y -= normalY * correction;
-	b.x += normalX * correction;
-	b.y += normalY * correction;
+	a.x -= normalX * overlap * (inverseMassA / inverseMassTotal);
+	a.y -= normalY * overlap * (inverseMassA / inverseMassTotal);
+	b.x += normalX * overlap * (inverseMassB / inverseMassTotal);
+	b.y += normalY * overlap * (inverseMassB / inverseMassTotal);
 
 	const relativeVelocityX = b.vx - a.vx;
 	const relativeVelocityY = b.vy - a.vy;
@@ -286,14 +326,15 @@ function resolveFruitPair(a: Fruit, b: Fruit) {
 	}
 
 	const impactSpeed = -separatingVelocity;
-	const impulse = (-(1 + config.collisionDamping) * separatingVelocity) / 2;
+	const impulse =
+		(-(1 + config.collisionDamping) * separatingVelocity) / inverseMassTotal;
 	const impulseX = impulse * normalX;
 	const impulseY = impulse * normalY;
 
-	a.vx -= impulseX;
-	a.vy -= impulseY;
-	b.vx += impulseX;
-	b.vy += impulseY;
+	a.vx -= impulseX * inverseMassA;
+	a.vy -= impulseY * inverseMassA;
+	b.vx += impulseX * inverseMassB;
+	b.vy += impulseY * inverseMassB;
 
 	applyLandingBounce(a, b, normalX, normalY, impactSpeed);
 }
@@ -317,10 +358,13 @@ function applyLandingBounce(
 	const bottomFruit = topFruit === a ? b : a;
 	const direction = stableDirection(topFruit.id, bottomFruit.id);
 	const strength = clamp(impactSpeed / 420, 0, 1);
+	const topResponse = inverseMassForFruit(topFruit);
+	const bottomResponse = inverseMassForFruit(bottomFruit);
 
-	topFruit.vx += direction * config.contactSideImpulse * strength;
-	bottomFruit.vx -= direction * config.contactSideImpulse * strength * 0.35;
-	topFruit.vy -= config.contactLiftImpulse * strength;
+	topFruit.vx += direction * config.contactSideImpulse * strength * topResponse;
+	bottomFruit.vx -=
+		direction * config.contactSideImpulse * strength * 0.35 * bottomResponse;
+	topFruit.vy -= config.contactLiftImpulse * strength * topResponse;
 }
 
 function resolveMerges() {
@@ -339,6 +383,7 @@ function resolveMerges() {
 				const mergedFruit = createMergedFruit(a, b);
 				mergedFruits.push(mergedFruit);
 				addScoreForFruit(mergedFruit);
+				addMergeEffect(mergedFruit);
 			}
 		}
 
@@ -361,6 +406,7 @@ function endGame() {
 	isGameOver = true;
 	gameOverOverlay.hidden = false;
 	canvas.classList.add("is-game-over");
+	setFirehose(false);
 	gameOverNote.textContent = highScoreRank
 		? `New top ${highScoreRank}! ${formatScore(score)} pts`
 		: `Final score: ${formatScore(score)}`;
@@ -377,9 +423,60 @@ function outOfBoundsOverhang() {
 	}, 0);
 }
 
+function applySettlingPressure() {
+	for (const fruit of fruits) {
+		if (!isFruitSupported(fruit)) {
+			continue;
+		}
+
+		const direction = stableDirection(fruit.id, Math.round(fruit.x + fruit.y));
+		fruit.vx += direction * config.settleNudge * inverseMassForFruit(fruit);
+		fruit.vy += config.settleNudge * 0.5;
+	}
+}
+
+function isFruitSupported(fruit: Fruit) {
+	const bounds = playBounds();
+
+	if (fruit.y + fruit.radius >= bounds.bottom - 0.8) {
+		return true;
+	}
+
+	return fruits.some((other) => {
+		if (other.id === fruit.id || other.y <= fruit.y) {
+			return false;
+		}
+
+		const distance = Math.hypot(other.x - fruit.x, other.y - fruit.y);
+		return distance <= fruit.radius + other.radius + 0.8;
+	});
+}
+
 function addScoreForFruit(fruit: Fruit) {
 	score += scoreForRadius(fruit.radius);
 	updateScore();
+}
+
+function addMergeEffect(fruit: Fruit) {
+	mergeEffects.push({
+		id: nextEffectId++,
+		x: fruit.x,
+		y: fruit.y,
+		radius: fruit.radius,
+		style: styleForFruitLevel(fruit.level),
+		startedAt: performance.now(),
+		duration: config.mergeBurstDuration,
+	});
+}
+
+function pruneMergeEffects() {
+	const now = performance.now();
+
+	for (let i = mergeEffects.length - 1; i >= 0; i -= 1) {
+		if (now - mergeEffects[i].startedAt >= mergeEffects[i].duration) {
+			mergeEffects.splice(i, 1);
+		}
+	}
 }
 
 function scoreForRadius(radius: number) {
@@ -453,15 +550,19 @@ function createMergedFruit(a: Fruit, b: Fruit): Fruit {
 	const bounds = playBounds();
 	const x = clamp((a.x + b.x) / 2, bounds.left + radius, bounds.right - radius);
 	const y = clamp((a.y + b.y) / 2, bounds.top + radius, bounds.bottom - radius);
+	const massA = massForFruit(a);
+	const massB = massForFruit(b);
+	const totalMass = massA + massB;
 
 	return {
 		id: nextFruitId++,
 		level: nextLevel,
 		x,
 		y,
-		vx: (a.vx + b.vx) * 0.28,
-		vy: (a.vy + b.vy) * 0.28,
+		vx: ((a.vx * massA + b.vx * massB) / totalMass) * 0.42,
+		vy: ((a.vy * massA + b.vy * massB) / totalMass) * 0.42,
 		radius,
+		bornAt: performance.now(),
 	};
 }
 
@@ -471,6 +572,10 @@ function render() {
 
 	for (const fruit of fruits) {
 		drawFruit(fruit);
+	}
+
+	for (const effect of mergeEffects) {
+		drawMergeEffect(effect);
 	}
 
 	drawPlayfieldOverlay();
@@ -504,9 +609,13 @@ function drawPlayfieldOverlay() {
 
 function drawFruit(fruit: Fruit) {
 	const style = styleForFruitLevel(fruit.level);
+	const age = performance.now() - fruit.bornAt;
+	const popProgress = clamp(age / config.mergePopDuration, 0, 1);
+	const popScale = 1 + Math.sin(popProgress * Math.PI) * 0.16;
+	const radius = fruit.radius * popScale;
 
 	context.beginPath();
-	context.arc(fruit.x, fruit.y, fruit.radius, 0, Math.PI * 2);
+	context.arc(fruit.x, fruit.y, radius, 0, Math.PI * 2);
 	context.fillStyle = style.fill;
 	context.fill();
 	context.lineWidth = 3;
@@ -515,14 +624,78 @@ function drawFruit(fruit: Fruit) {
 
 	context.beginPath();
 	context.arc(
-		fruit.x - fruit.radius * 0.28,
-		fruit.y - fruit.radius * 0.32,
-		fruit.radius * 0.18,
+		fruit.x - radius * 0.28,
+		fruit.y - radius * 0.32,
+		radius * 0.18,
 		0,
 		Math.PI * 2,
 	);
 	context.fillStyle = "rgba(255, 255, 255, 0.86)";
 	context.fill();
+}
+
+function drawMergeEffect(effect: MergeEffect) {
+	const progress = clamp(
+		(performance.now() - effect.startedAt) / effect.duration,
+		0,
+		1,
+	);
+	const alpha = 1 - progress;
+	const burstRadius = effect.radius * (0.72 + progress * 0.72);
+
+	context.save();
+	context.globalAlpha = alpha * 0.72;
+	context.strokeStyle = effect.style.fill;
+	context.lineWidth = 5 * (1 - progress) + 1;
+	context.beginPath();
+	context.arc(effect.x, effect.y, burstRadius, 0, Math.PI * 2);
+	context.stroke();
+
+	context.globalAlpha = alpha * 0.42;
+	context.fillStyle = effect.style.fill;
+	for (let i = 0; i < 6; i += 1) {
+		const angle = (Math.PI * 2 * i) / 6 + progress * 0.8;
+		const distance = effect.radius * (0.45 + progress * 0.85);
+		context.beginPath();
+		context.arc(
+			effect.x + Math.cos(angle) * distance,
+			effect.y + Math.sin(angle) * distance,
+			Math.max(2, effect.radius * 0.08 * (1 - progress)),
+			0,
+			Math.PI * 2,
+		);
+		context.fill();
+	}
+	context.restore();
+}
+
+function maybeRunFirehose() {
+	if (!isFirehoseActive || isGameOver) {
+		return;
+	}
+
+	const now = performance.now();
+
+	if (now - lastFirehoseDropTime < config.dropCooldownMs) {
+		return;
+	}
+
+	if (outOfBoundsOverhang() >= config.gameOverOverhangLimit) {
+		endGame();
+		return;
+	}
+
+	lastFirehoseDropTime = now;
+	lastDropTime = now;
+	const rect = canvas.getBoundingClientRect();
+	dropFruitAt(rect.left + rect.width / 2);
+}
+
+function setFirehose(isActive: boolean) {
+	isFirehoseActive = isActive;
+	lastFirehoseDropTime = 0;
+	firehoseButton.setAttribute("aria-pressed", String(isFirehoseActive));
+	firehoseButton.classList.toggle("is-active", isFirehoseActive);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -538,6 +711,22 @@ function playBounds() {
 		top: inset,
 		bottom: canvas.height - inset,
 	};
+}
+
+function massForFruit(fruit: Fruit) {
+	return massForRadius(fruit.radius);
+}
+
+function massForRadius(radius: number) {
+	return clamp((radius / config.baseFruitRadius) ** 2, 1, config.maxFruitMass);
+}
+
+function inverseMassForFruit(fruit: Fruit) {
+	return 1 / massForFruit(fruit);
+}
+
+function dragForFruit(fruit: Fruit) {
+	return 1 - config.fruitDrag / massForFruit(fruit) ** 0.35;
 }
 
 function stableDirection(a: number, b: number) {
@@ -660,15 +849,22 @@ canvas.addEventListener("pointerdown", (event) => {
 	addFruit(event.clientX);
 });
 
+firehoseButton.addEventListener("click", () => {
+	setFirehose(!isFirehoseActive);
+});
+
 resetButton.addEventListener("click", () => {
 	fruits.length = 0;
+	mergeEffects.length = 0;
 	nextFruitId = 1;
+	nextEffectId = 1;
 	score = 0;
 	lastDropTime = -config.dropCooldownMs;
 	currentDropLevel = randomDropLevel();
 	nextDropLevel = randomDropLevel();
 	isGameOver = false;
 	isOverhangWarningActive = false;
+	setFirehose(false);
 	gameOverOverlay.hidden = true;
 	canvas.classList.remove("is-game-over");
 	canvas.classList.remove("has-overhang-warning");
