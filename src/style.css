@@ -108,6 +108,53 @@ h1 {
   cursor: pointer;
 }
 
+.drop-previews {
+  position: relative;
+  height: 92px;
+}
+
+.fruit-preview {
+  width: var(--fruit-preview-size, 32px);
+  height: var(--fruit-preview-size, 32px);
+  border: 3px solid var(--fruit-preview-stroke, #201c17);
+  border-radius: 50%;
+  background: var(--fruit-preview-fill, #f9f6ed);
+  box-shadow:
+    inset 8px 10px 0 rgba(255, 255, 255, 0.28),
+    0 4px 0 rgba(46, 41, 34, 0.16);
+}
+
+.current-preview {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+}
+
+.next-preview-box {
+  position: absolute;
+  right: 0;
+  bottom: 18px;
+  min-width: 118px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 2px solid rgba(46, 41, 34, 0.34);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.next-preview-box span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 #reset:hover {
   background: #358e70;
 }
@@ -156,5 +203,14 @@ h1 {
 
   .game-stage {
     width: min(100%, 420px);
+  }
+
+  .drop-previews {
+    height: 78px;
+  }
+
+  .next-preview-box {
+    min-width: 104px;
+    padding-inline: 10px;
   }
 }

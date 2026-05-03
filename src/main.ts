@@ -10,6 +10,12 @@ type Fruit = {
   radius: number
 }
 
+type FruitStyle = {
+  name: string
+  fill: string
+  stroke: string
+}
+
 const config = {
   playWidth: 420,
   playHeight: 620,
@@ -26,6 +32,20 @@ const config = {
   collisionDamping: 0.34,
   solverPasses: 5,
 }
+
+const fruitStyles: FruitStyle[] = [
+  { name: 'red', fill: '#ef4444', stroke: '#991b1b' },
+  { name: 'blue', fill: '#3b82f6', stroke: '#1d4ed8' },
+  { name: 'lime', fill: '#84cc16', stroke: '#3f6212' },
+  { name: 'violet', fill: '#8b5cf6', stroke: '#6d28d9' },
+  { name: 'amber', fill: '#f59e0b', stroke: '#92400e' },
+  { name: 'cyan', fill: '#06b6d4', stroke: '#155e75' },
+  { name: 'pink', fill: '#ec4899', stroke: '#9d174d' },
+  { name: 'emerald', fill: '#10b981', stroke: '#065f46' },
+  { name: 'orange', fill: '#f97316', stroke: '#9a3412' },
+  { name: 'sky', fill: '#0ea5e9', stroke: '#0369a1' },
+  { name: 'rose', fill: '#f43f5e', stroke: '#9f1239' },
+]
 
 const app = document.querySelector<HTMLDivElement>('#app')
 
@@ -46,6 +66,13 @@ app.innerHTML = `
         <span id="fruit-count">0 fruits</span>
         <button id="reset" type="button">Reset</button>
       </div>
+      <div class="drop-previews" aria-label="upcoming fruit">
+        <div id="current-preview" class="fruit-preview current-preview" aria-label="current fruit"></div>
+        <div class="next-preview-box" aria-label="next fruit">
+          <span>next</span>
+          <div id="next-preview" class="fruit-preview"></div>
+        </div>
+      </div>
       <canvas id="playfield" width="${config.playWidth}" height="${config.playHeight}" aria-label="clickable play area"></canvas>
     </section>
   </main>
@@ -54,12 +81,16 @@ app.innerHTML = `
 const canvas = requiredElement<HTMLCanvasElement>('#playfield')
 const resetButton = requiredElement<HTMLButtonElement>('#reset')
 const countLabel = requiredElement<HTMLSpanElement>('#fruit-count')
+const currentPreview = requiredElement<HTMLDivElement>('#current-preview')
+const nextPreview = requiredElement<HTMLDivElement>('#next-preview')
 const context = requiredCanvasContext(canvas)
 
 const fruits: Fruit[] = []
 let nextFruitId = 1
 let previousTime = performance.now()
 let lastDropTime = -config.dropCooldownMs
+let currentDropLevel = randomDropLevel()
+let nextDropLevel = randomDropLevel()
 
 function addFruit(clientX: number) {
   const now = performance.now()
@@ -72,7 +103,7 @@ function addFruit(clientX: number) {
 
   const rect = canvas.getBoundingClientRect()
   const scaleX = canvas.width / rect.width
-  const level = randomDropLevel()
+  const level = currentDropLevel
   const radius = radiusForFruitLevel(level)
   const x = clamp((clientX - rect.left) * scaleX, radius, canvas.width - radius)
 
@@ -86,7 +117,10 @@ function addFruit(clientX: number) {
     radius,
   })
 
+  currentDropLevel = nextDropLevel
+  nextDropLevel = randomDropLevel()
   updateCount()
+  updatePreviews()
 }
 
 function updateCount() {
@@ -296,12 +330,14 @@ function drawPlayfield() {
 }
 
 function drawFruit(fruit: Fruit) {
+  const style = styleForFruitLevel(fruit.level)
+
   context.beginPath()
   context.arc(fruit.x, fruit.y, fruit.radius, 0, Math.PI * 2)
-  context.fillStyle = '#f9f6ed'
+  context.fillStyle = style.fill
   context.fill()
   context.lineWidth = 3
-  context.strokeStyle = '#201c17'
+  context.strokeStyle = style.stroke
   context.stroke()
 
   context.beginPath()
@@ -321,6 +357,26 @@ function randomDropLevel() {
 function radiusForFruitLevel(level: number) {
   const clampedLevel = clamp(Math.round(level), 1, config.fruitLevels)
   return Math.round(config.baseFruitRadius * config.fruitRadiusScale ** (clampedLevel - 1))
+}
+
+function styleForFruitLevel(level: number) {
+  return fruitStyles[clamp(Math.round(level), 1, config.fruitLevels) - 1]
+}
+
+function updatePreviews() {
+  updatePreview(currentPreview, currentDropLevel)
+  updatePreview(nextPreview, nextDropLevel)
+}
+
+function updatePreview(element: HTMLElement, level: number) {
+  const style = styleForFruitLevel(level)
+  const radius = radiusForFruitLevel(level)
+  const canvasScale = canvas.getBoundingClientRect().width / canvas.width
+
+  element.style.setProperty('--fruit-preview-size', `${Math.round(radius * 2 * canvasScale)}px`)
+  element.style.setProperty('--fruit-preview-fill', style.fill)
+  element.style.setProperty('--fruit-preview-stroke', style.stroke)
+  element.setAttribute('aria-label', `${style.name} level ${level} fruit`)
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -362,5 +418,8 @@ resetButton.addEventListener('click', () => {
   updateCount()
 })
 
+window.addEventListener('resize', updatePreviews)
+
 updateCount()
+updatePreviews()
 requestAnimationFrame(gameLoop)
