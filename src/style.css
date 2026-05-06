@@ -26,8 +26,9 @@
 
 body {
   min-width: 320px;
-  min-height: 100vh;
+  height: 100dvh;
   margin: 0;
+  overflow: hidden;
 }
 
 button {
@@ -35,18 +36,21 @@ button {
 }
 
 #app {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
 }
 
 .game-shell {
-  width: min(100%, 1040px);
-  min-height: 100vh;
+  width: 100%;
+  max-width: 1120px;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
-  padding: 32px;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(320px, 500px);
-  gap: 36px;
-  align-items: center;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
 }
 
 .game-copy {
@@ -54,9 +58,9 @@ button {
 }
 
 .eyebrow {
-  margin: 0 0 12px;
+  margin: 0 0 4px;
   color: var(--accent-dark);
-  font-size: 0.78rem;
+  font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -64,31 +68,39 @@ button {
 
 h1 {
   margin: 0;
-  font-size: 4.25rem;
-  line-height: 0.95;
+  font-size: 2rem;
+  line-height: 0.9;
   letter-spacing: 0;
 }
 
 .lede {
+  display: none;
   max-width: 34rem;
-  margin: 22px 0 0;
+  margin: 10px 0 0;
   color: var(--muted);
-  font-size: 1.08rem;
-  line-height: 1.6;
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 .game-stage {
-  width: min(100%, 500px);
+  width: calc(100vw - 28px);
+  max-width: calc(100vw - 28px);
+  min-width: 0;
+  min-height: 0;
   margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .hud {
-  min-height: 52px;
-  margin-bottom: 8px;
+  width: calc(100vw - 28px);
+  min-height: 44px;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 
 .hud-stats {
@@ -99,24 +111,31 @@ h1 {
 #fruit-count {
   min-width: 7ch;
   color: var(--muted);
+  font-size: 0.9rem;
   font-weight: 800;
 }
 
 #score {
   color: var(--ink);
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   font-weight: 900;
   line-height: 1.05;
 }
 
 .hud-actions {
+  position: fixed;
+  top: 72px;
+  right: 14px;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .scoreboard {
-  min-height: 26px;
+  width: calc(100vw - 28px);
+  min-height: 22px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -134,6 +153,7 @@ h1 {
   display: flex;
   gap: 8px;
   list-style: none;
+  overflow: hidden;
 }
 
 .scoreboard li {
@@ -148,14 +168,15 @@ h1 {
 
 #reset,
 #firehose {
-  min-height: 40px;
-  padding: 0 18px;
+  min-height: 38px;
+  padding: 0 13px;
   border: 2px solid var(--accent-dark);
   border-radius: 6px;
   color: #ffffff;
   background: var(--accent);
   box-shadow: 0 3px 0 var(--accent-dark);
   cursor: pointer;
+  font-size: 0.95rem;
 }
 
 #firehose {
@@ -166,7 +187,8 @@ h1 {
 
 .drop-previews {
   position: relative;
-  height: 92px;
+  width: calc(100vw - 28px);
+  height: 74px;
 }
 
 .fruit-preview {
@@ -179,16 +201,17 @@ h1 {
 .current-preview {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 8px;
   transform: translateX(-50%);
 }
 
 .next-preview-box {
-  position: absolute;
-  right: 0;
-  bottom: 18px;
-  min-width: 118px;
-  min-height: 48px;
+  position: fixed;
+  top: 120px;
+  right: 14px;
+  z-index: 2;
+  min-width: 104px;
+  min-height: 44px;
   padding: 6px 12px;
   border: 2px solid rgba(46, 41, 34, 0.34);
   border-radius: 8px;
@@ -230,8 +253,7 @@ h1 {
 #playfield {
   display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: var(--playfield-aspect-ratio, 420 / 620);
+  height: 100%;
   border-radius: 4px;
   background: var(--field);
   box-shadow:
@@ -243,6 +265,11 @@ h1 {
 
 .playfield-wrap {
   position: relative;
+  width: min(calc(100vw - 28px), calc((100dvh - 180px) * (380 / 480)));
+  max-height: 100%;
+  margin: 0 auto;
+  aspect-ratio: var(--playfield-aspect-ratio, 380 / 480);
+  align-self: end;
 }
 
 #playfield.is-game-over {
@@ -284,33 +311,120 @@ h1 {
   opacity: 0.86;
 }
 
-@media (max-width: 780px) {
+@media (min-width: 781px) {
   .game-shell {
-    padding: 22px;
-    grid-template-columns: 1fr;
-    gap: 22px;
-    align-items: start;
+    padding: 32px;
+    grid-template-columns: minmax(240px, 1fr) minmax(320px, 520px);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 36px;
+    align-items: center;
+  }
+
+  .game-copy {
+    align-self: center;
+  }
+
+  .eyebrow {
+    margin-bottom: 12px;
+    font-size: 0.78rem;
   }
 
   h1 {
-    font-size: 3.2rem;
+    font-size: 4.25rem;
   }
 
   .lede {
-    margin-top: 14px;
-    font-size: 1rem;
+    display: block;
+    margin-top: 22px;
+    font-size: 1.08rem;
+    line-height: 1.6;
   }
 
   .game-stage {
-    width: min(100%, 420px);
+    width: min(100%, 520px);
+    max-width: 520px;
+    max-height: 100%;
+  }
+
+  .hud,
+  .scoreboard,
+  .drop-previews {
+    width: 100%;
   }
 
   .drop-previews {
-    height: 78px;
+    height: 92px;
   }
 
   .next-preview-box {
-    min-width: 104px;
+    position: absolute;
+    top: auto;
+    right: 0;
+    min-width: 118px;
+    min-height: 48px;
+    bottom: 18px;
+    padding-inline: 12px;
+  }
+
+  .current-preview {
+    bottom: 12px;
+  }
+
+  .hud-actions {
+    position: static;
+  }
+
+  .playfield-wrap {
+    width: min(100%, calc((100dvh - 260px) * (380 / 480)));
+    align-self: center;
+  }
+}
+
+@media (max-width: 380px), (max-height: 720px) {
+  .game-shell {
+    gap: 6px;
+  }
+
+  .eyebrow,
+  .scoreboard span {
+    display: none;
+  }
+
+  h1 {
+    font-size: 1.65rem;
+  }
+
+  .hud {
+    width: 100%;
+  }
+
+  .scoreboard {
+    width: 100%;
+  }
+
+  .drop-previews {
+    width: 100%;
+  }
+
+  .hud {
+    min-height: 38px;
+  }
+
+  #score {
+    font-size: 1.2rem;
+  }
+
+  #reset,
+  #firehose {
+    min-height: 34px;
     padding-inline: 10px;
+  }
+
+  .drop-previews {
+    height: 62px;
+  }
+
+  .playfield-wrap {
+    width: min(calc(100vw - 28px), calc((100dvh - 136px) * (380 / 480)));
   }
 }
