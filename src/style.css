@@ -172,12 +172,8 @@ h1 {
 .fruit-preview {
   width: var(--fruit-preview-size, 32px);
   height: var(--fruit-preview-size, 32px);
-  border: 3px solid var(--fruit-preview-stroke, #201c17);
-  border-radius: 50%;
-  background: var(--fruit-preview-fill, #f9f6ed);
-  box-shadow:
-    inset 8px 10px 0 rgba(255, 255, 255, 0.28),
-    0 4px 0 rgba(46, 41, 34, 0.16);
+  background: var(--fruit-preview-image) center / contain no-repeat;
+  filter: drop-shadow(0 4px 0 rgba(46, 41, 34, 0.16));
 }
 
 .current-preview {

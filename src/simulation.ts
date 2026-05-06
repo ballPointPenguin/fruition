@@ -22,13 +22,15 @@ export type MergeEffect = {
 export type SimulationConfig = typeof defaultSimulationConfig;
 
 export const defaultSimulationConfig = {
-	playWidth: 400,
-	playHeight: 500,
+	playWidth: 380,
+	playHeight: 480,
 	playBorderWidth: 4,
 	fruitLevels: 11,
 	generatedFruitLevels: 4,
-	baseFruitRadius: 10,
+	baseFruitRadius: 12,
 	fruitRadiusScale: 1.33,
+	fruitRadiusScaleBreakLevel: 6,
+	fruitRadiusLargeScale: 1.2,
 	gravitySpeed: 980,
 	dropCooldownMs: 350,
 	gameOverOverhangLimit: 40,
@@ -167,9 +169,19 @@ export class GameSimulation {
 
 	radiusForFruitLevel(level: number) {
 		const clampedLevel = clamp(Math.round(level), 1, this.config.fruitLevels);
+		const earlyScaleSteps = Math.min(
+			clampedLevel - 1,
+			this.config.fruitRadiusScaleBreakLevel - 1,
+		);
+		const lateScaleSteps = Math.max(
+			0,
+			clampedLevel - this.config.fruitRadiusScaleBreakLevel,
+		);
+
 		return Math.round(
 			this.config.baseFruitRadius *
-				this.config.fruitRadiusScale ** (clampedLevel - 1),
+				this.config.fruitRadiusScale ** earlyScaleSteps *
+				this.config.fruitRadiusLargeScale ** lateScaleSteps,
 		);
 	}
 

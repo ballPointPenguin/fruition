@@ -8,8 +8,10 @@ import {
 
 type FruitStyle = {
 	name: string;
+	asset: string;
 	fill: string;
 	stroke: string;
+	artScale: number;
 };
 
 type HighScore = {
@@ -20,18 +22,90 @@ type HighScore = {
 const highScoreStorageKey = "fruition.highScores.v1";
 
 const fruitStyles: FruitStyle[] = [
-	{ name: "red", fill: "#ef4444", stroke: "#991b1b" },
-	{ name: "blue", fill: "#3b82f6", stroke: "#1d4ed8" },
-	{ name: "lime", fill: "#84cc16", stroke: "#3f6212" },
-	{ name: "violet", fill: "#8b5cf6", stroke: "#6d28d9" },
-	{ name: "amber", fill: "#f59e0b", stroke: "#92400e" },
-	{ name: "cyan", fill: "#06b6d4", stroke: "#155e75" },
-	{ name: "pink", fill: "#ec4899", stroke: "#9d174d" },
-	{ name: "emerald", fill: "#10b981", stroke: "#065f46" },
-	{ name: "orange", fill: "#f97316", stroke: "#9a3412" },
-	{ name: "sky", fill: "#0ea5e9", stroke: "#0369a1" },
-	{ name: "rose", fill: "#f43f5e", stroke: "#9f1239" },
+	{
+		name: "blueberry",
+		asset: "/blueberry.svg",
+		fill: "#5a78b0",
+		stroke: "#1c2d54",
+		artScale: 2.64,
+	},
+	{
+		name: "cherry",
+		asset: "/cherry.svg",
+		fill: "#ec4899",
+		stroke: "#9d174d",
+		artScale: 2.86,
+	},
+	{
+		name: "strawberry",
+		asset: "/strawberry.svg",
+		fill: "#f97316",
+		stroke: "#9a3412",
+		artScale: 2.78,
+	},
+	{
+		name: "lime",
+		asset: "/lime.svg",
+		fill: "#84cc16",
+		stroke: "#3f6212",
+		artScale: 2.64,
+	},
+	{
+		name: "plum",
+		asset: "/plum.svg",
+		fill: "#f9a8d4",
+		stroke: "#9d174d",
+		artScale: 2.64,
+	},
+	{
+		name: "orange",
+		asset: "/orange.svg",
+		fill: "#f59e0b",
+		stroke: "#92400e",
+		artScale: 2.64,
+	},
+	{
+		name: "apple",
+		asset: "/apple.svg",
+		fill: "#ef4444",
+		stroke: "#991b1b",
+		artScale: 2.64,
+	},
+	{
+		name: "pomegranate",
+		asset: "/pomegranate.svg",
+		fill: "#ec4899",
+		stroke: "#9d174d",
+		artScale: 2.74,
+	},
+	{
+		name: "coconut",
+		asset: "/coconut.svg",
+		fill: "#b45309",
+		stroke: "#78350f",
+		artScale: 2.64,
+	},
+	{
+		name: "pineapple",
+		asset: "/pineapple.svg",
+		fill: "#facc15",
+		stroke: "#a16207",
+		artScale: 2.7,
+	},
+	{
+		name: "watermelon",
+		asset: "/watermelon.svg",
+		fill: "#22c55e",
+		stroke: "#166534",
+		artScale: 2.42,
+	},
 ];
+
+const fruitImages = fruitStyles.map((style) => {
+	const image = new Image();
+	image.src = style.asset;
+	return image;
+});
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -44,7 +118,7 @@ app.innerHTML = `
     <section class="game-copy" aria-labelledby="title">
       <p class="eyebrow">first playable prototype</p>
       <h1 id="title">fruition</h1>
-      <p class="lede">Click or tap inside the box to drop a randomly sized plain circle. Matching sizes merge upward, while the biggest pair clears space.</p>
+      <p class="lede">Click or tap inside the box to drop a randomly sized fruit. Matching fruits merge upward, while the biggest pair clears space.</p>
     </section>
 
     <section class="game-stage" aria-label="fruition prototype">
@@ -224,29 +298,25 @@ function drawPlayfieldOverlay() {
 
 function drawFruit(fruit: Fruit, now: number) {
 	const style = styleForFruitLevel(fruit.level);
+	const image = imageForFruitLevel(fruit.level);
 	const age = now - fruit.bornAt;
 	const popProgress = clamp(age / simulation.config.mergePopDuration, 0, 1);
 	const popScale = 1 + Math.sin(popProgress * Math.PI) * 0.16;
 	const radius = fruit.radius * popScale;
 
-	context.beginPath();
-	context.arc(fruit.x, fruit.y, radius, 0, Math.PI * 2);
-	context.fillStyle = style.fill;
-	context.fill();
-	context.lineWidth = 3;
-	context.strokeStyle = style.stroke;
-	context.stroke();
+	if (image.complete && image.naturalWidth > 0) {
+		const size = radius * style.artScale;
+		context.drawImage(
+			image,
+			fruit.x - size / 2,
+			fruit.y - size / 2,
+			size,
+			size,
+		);
+		return;
+	}
 
-	context.beginPath();
-	context.arc(
-		fruit.x - radius * 0.28,
-		fruit.y - radius * 0.32,
-		radius * 0.18,
-		0,
-		Math.PI * 2,
-	);
-	context.fillStyle = "rgba(255, 255, 255, 0.86)";
-	context.fill();
+	drawFallbackFruit(fruit.x, fruit.y, radius, style);
 }
 
 function drawMergeEffect(effect: MergeEffect, now: number) {
@@ -297,6 +367,7 @@ function updatePreview(element: HTMLElement, level: number) {
 	);
 	element.style.setProperty("--fruit-preview-fill", style.fill);
 	element.style.setProperty("--fruit-preview-stroke", style.stroke);
+	element.style.setProperty("--fruit-preview-image", `url("${style.asset}")`);
 	element.setAttribute("aria-label", `${style.name} level ${level} fruit`);
 }
 
@@ -319,7 +390,8 @@ function admitHighScore(finalScore: number) {
 	}
 
 	const qualifies =
-		highScores.length < 3 || finalScore > highScores[highScores.length - 1].score;
+		highScores.length < 3 ||
+		finalScore > highScores[highScores.length - 1].score;
 
 	if (!qualifies) {
 		return null;
@@ -341,7 +413,41 @@ function admitHighScore(finalScore: number) {
 }
 
 function styleForFruitLevel(level: number) {
-	return fruitStyles[clamp(Math.round(level), 1, simulation.config.fruitLevels) - 1];
+	return fruitStyles[
+		clamp(Math.round(level), 1, simulation.config.fruitLevels) - 1
+	];
+}
+
+function imageForFruitLevel(level: number) {
+	return fruitImages[
+		clamp(Math.round(level), 1, simulation.config.fruitLevels) - 1
+	];
+}
+
+function drawFallbackFruit(
+	x: number,
+	y: number,
+	radius: number,
+	style: FruitStyle,
+) {
+	context.beginPath();
+	context.arc(x, y, radius, 0, Math.PI * 2);
+	context.fillStyle = style.fill;
+	context.fill();
+	context.lineWidth = 3;
+	context.strokeStyle = style.stroke;
+	context.stroke();
+
+	context.beginPath();
+	context.arc(
+		x - radius * 0.28,
+		y - radius * 0.32,
+		radius * 0.18,
+		0,
+		Math.PI * 2,
+	);
+	context.fillStyle = "rgba(255, 255, 255, 0.86)";
+	context.fill();
 }
 
 function formatScore(value: number) {
