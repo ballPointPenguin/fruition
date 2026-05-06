@@ -22,16 +22,16 @@ export type MergeEffect = {
 export type SimulationConfig = typeof defaultSimulationConfig;
 
 export const defaultSimulationConfig = {
-	playWidth: 420,
-	playHeight: 620,
+	playWidth: 400,
+	playHeight: 500,
 	playBorderWidth: 4,
 	fruitLevels: 11,
 	generatedFruitLevels: 4,
-	baseFruitRadius: 14,
-	fruitRadiusScale: 1.3,
+	baseFruitRadius: 10,
+	fruitRadiusScale: 1.33,
 	gravitySpeed: 980,
 	dropCooldownMs: 350,
-	gameOverOverhangLimit: 50,
+	gameOverOverhangLimit: 40,
 	warningOverhang: 0,
 	mergeContactSlop: 1,
 	maxCascadeMerges: 24,
@@ -75,11 +75,13 @@ export class GameSimulation {
 	private lastDropTime: number;
 	private readonly random: () => number;
 
-	constructor(options: {
-		config?: Partial<SimulationConfig>;
-		random?: () => number;
-		now?: number;
-	} = {}) {
+	constructor(
+		options: {
+			config?: Partial<SimulationConfig>;
+			random?: () => number;
+			now?: number;
+		} = {},
+	) {
 		this.config = { ...defaultSimulationConfig, ...options.config };
 		this.random = options.random ?? Math.random;
 		this.lastDropTime = (options.now ?? 0) - this.config.dropCooldownMs;
@@ -150,7 +152,10 @@ export class GameSimulation {
 			if (Math.abs(fruit.vx) < 0.02) {
 				fruit.vx = 0;
 			}
-			if (Math.abs(fruit.vy) < this.config.sleepSpeed && this.isFruitSupported(fruit)) {
+			if (
+				Math.abs(fruit.vy) < this.config.sleepSpeed &&
+				this.isFruitSupported(fruit)
+			) {
 				fruit.vy = 0;
 			}
 		}
@@ -283,7 +288,10 @@ export class GameSimulation {
 			Math.abs(normalX) < this.config.verticalContactThreshold &&
 			Math.abs(normalY) > 0.86;
 
-		if (!isNearlyVerticalContact || impactSpeed < this.config.fallingImpactMinSpeed) {
+		if (
+			!isNearlyVerticalContact ||
+			impactSpeed < this.config.fallingImpactMinSpeed
+		) {
 			return;
 		}
 
@@ -294,7 +302,8 @@ export class GameSimulation {
 		const topResponse = this.inverseMassForFruit(topFruit);
 		const bottomResponse = this.inverseMassForFruit(bottomFruit);
 
-		topFruit.vx += direction * this.config.contactSideImpulse * strength * topResponse;
+		topFruit.vx +=
+			direction * this.config.contactSideImpulse * strength * topResponse;
 		bottomFruit.vx -=
 			direction *
 			this.config.contactSideImpulse *
@@ -308,7 +317,10 @@ export class GameSimulation {
 		let cascadeCount = 0;
 		let mergePairs = this.findMergePairs();
 
-		while (mergePairs.length > 0 && cascadeCount < this.config.maxCascadeMerges) {
+		while (
+			mergePairs.length > 0 &&
+			cascadeCount < this.config.maxCascadeMerges
+		) {
 			const mergedFruits: Fruit[] = [];
 			const removedFruitIds = new Set<number>();
 
@@ -374,8 +386,16 @@ export class GameSimulation {
 		const nextLevel = a.level + 1;
 		const radius = this.radiusForFruitLevel(nextLevel);
 		const bounds = this.playBounds();
-		const x = clamp((a.x + b.x) / 2, bounds.left + radius, bounds.right - radius);
-		const y = clamp((a.y + b.y) / 2, bounds.top + radius, bounds.bottom - radius);
+		const x = clamp(
+			(a.x + b.x) / 2,
+			bounds.left + radius,
+			bounds.right - radius,
+		);
+		const y = clamp(
+			(a.y + b.y) / 2,
+			bounds.top + radius,
+			bounds.bottom - radius,
+		);
 		const massA = this.massForFruit(a);
 		const massB = this.massForFruit(b);
 		const totalMass = massA + massB;
@@ -406,7 +426,10 @@ export class GameSimulation {
 
 	private pruneMergeEffects(now: number) {
 		for (let i = this.mergeEffects.length - 1; i >= 0; i -= 1) {
-			if (now - this.mergeEffects[i].startedAt >= this.mergeEffects[i].duration) {
+			if (
+				now - this.mergeEffects[i].startedAt >=
+				this.mergeEffects[i].duration
+			) {
 				this.mergeEffects.splice(i, 1);
 			}
 		}
@@ -418,8 +441,12 @@ export class GameSimulation {
 				continue;
 			}
 
-			const direction = stableDirection(fruit.id, Math.round(fruit.x + fruit.y));
-			fruit.vx += direction * this.config.settleNudge * this.inverseMassForFruit(fruit);
+			const direction = stableDirection(
+				fruit.id,
+				Math.round(fruit.x + fruit.y),
+			);
+			fruit.vx +=
+				direction * this.config.settleNudge * this.inverseMassForFruit(fruit);
 			fruit.vy += this.config.settleNudge * 0.5;
 		}
 	}
@@ -488,4 +515,3 @@ export function clamp(value: number, min: number, max: number) {
 export function stableDirection(a: number, b: number) {
 	return (a * 31 + b * 17) % 2 === 0 ? 1 : -1;
 }
-

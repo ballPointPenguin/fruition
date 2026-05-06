@@ -70,7 +70,7 @@ app.innerHTML = `
         </div>
       </div>
       <div id="playfield-wrap" class="playfield-wrap">
-        <canvas id="playfield" width="${defaultSimulationConfig.playWidth}" height="${defaultSimulationConfig.playHeight}" aria-label="clickable play area"></canvas>
+        <canvas id="playfield" width="${defaultSimulationConfig.playWidth}" height="${defaultSimulationConfig.playHeight}" style="--playfield-aspect-ratio: ${defaultSimulationConfig.playWidth} / ${defaultSimulationConfig.playHeight}" aria-label="clickable play area"></canvas>
         <div id="game-over" class="game-over" hidden>
           <strong>Game over</strong>
           <span id="game-over-note">Reset to try again</span>

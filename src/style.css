@@ -235,7 +235,7 @@ h1 {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 420 / 620;
+  aspect-ratio: var(--playfield-aspect-ratio, 420 / 620);
   border-radius: 4px;
   background: var(--field);
   box-shadow:
