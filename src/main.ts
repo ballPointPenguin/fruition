@@ -12,6 +12,7 @@ type FruitStyle = {
 	fill: string;
 	stroke: string;
 	artScale: number;
+	svgBodyCy: number; // Y of the body circle center in SVG units (0–100); used to align visual with physics center
 };
 
 type HighScore = {
@@ -28,6 +29,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#5a78b0",
 		stroke: "#1c2d54",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "cherry",
@@ -35,6 +37,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#ec4899",
 		stroke: "#9d174d",
 		artScale: 2.86,
+		svgBodyCy: 55,
 	},
 	{
 		name: "strawberry",
@@ -42,6 +45,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#f97316",
 		stroke: "#9a3412",
 		artScale: 2.78,
+		svgBodyCy: 55,
 	},
 	{
 		name: "lime",
@@ -49,6 +53,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#84cc16",
 		stroke: "#3f6212",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "plum",
@@ -56,6 +61,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#f9a8d4",
 		stroke: "#9d174d",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "orange",
@@ -63,6 +69,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#f59e0b",
 		stroke: "#92400e",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "apple",
@@ -70,6 +77,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#ef4444",
 		stroke: "#991b1b",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "pomegranate",
@@ -77,6 +85,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#ec4899",
 		stroke: "#9d174d",
 		artScale: 2.74,
+		svgBodyCy: 58,
 	},
 	{
 		name: "coconut",
@@ -84,13 +93,15 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#b45309",
 		stroke: "#78350f",
 		artScale: 2.64,
+		svgBodyCy: 55,
 	},
 	{
 		name: "pineapple",
 		asset: "/pineapple.svg",
 		fill: "#facc15",
 		stroke: "#a16207",
-		artScale: 2.7,
+		artScale: 2.9,
+		svgBodyCy: 55,
 	},
 	{
 		name: "watermelon",
@@ -98,6 +109,7 @@ const fruitStyles: FruitStyle[] = [
 		fill: "#22c55e",
 		stroke: "#166534",
 		artScale: 2.42,
+		svgBodyCy: 50,
 	},
 ];
 
@@ -306,10 +318,11 @@ function drawFruit(fruit: Fruit, now: number) {
 
 	if (image.complete && image.naturalWidth > 0) {
 		const size = radius * style.artScale;
+		const yShift = (style.svgBodyCy - 50) * (size / 100);
 		context.drawImage(
 			image,
 			fruit.x - size / 2,
-			fruit.y - size / 2,
+			fruit.y - size / 2 - yShift,
 			size,
 			size,
 		);
