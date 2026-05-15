@@ -265,7 +265,7 @@ h1 {
 
 .playfield-wrap {
   position: relative;
-  width: min(calc(100vw - 28px), calc((100dvh - 180px) * (380 / 480)));
+  width: min(calc(100vw - 28px), calc((100dvh - 180px) * var(--playfield-aspect-ratio, 380 / 480)));
   max-height: 100%;
   margin: 0 auto;
   aspect-ratio: var(--playfield-aspect-ratio, 380 / 480);
@@ -375,7 +375,7 @@ h1 {
   }
 
   .playfield-wrap {
-    width: min(100%, calc((100dvh - 260px) * (380 / 480)));
+    width: min(100%, calc((100dvh - 260px) * var(--playfield-aspect-ratio, 380 / 480)));
     align-self: center;
   }
 }
@@ -425,6 +425,6 @@ h1 {
   }
 
   .playfield-wrap {
-    width: min(calc(100vw - 28px), calc((100dvh - 136px) * (380 / 480)));
+    width: min(calc(100vw - 28px), calc((100dvh - 136px) * var(--playfield-aspect-ratio, 380 / 480)));
   }
 }

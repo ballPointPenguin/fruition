@@ -22,8 +22,8 @@ export type MergeEffect = {
 export type SimulationConfig = typeof defaultSimulationConfig;
 
 export const defaultSimulationConfig = {
-	playWidth: 380,
-	playHeight: 480,
+	playWidth: 410,
+	playHeight: 520,
 	playBorderWidth: 4,
 	fruitLevels: 11,
 	generatedFruitLevels: 4,
