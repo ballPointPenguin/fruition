@@ -3,7 +3,9 @@ import {
 	GameSimulation,
 	type Fruit,
 	type MergeEffect,
+	type SimulationSnapshot,
 	defaultSimulationConfig,
+	scoreForRadius,
 } from "./simulation";
 
 type FruitStyle = {
@@ -21,6 +23,13 @@ type HighScore = {
 };
 
 const highScoreStorageKey = "fruition.highScores.v1";
+const undoWindowMs = 2500;
+const startingUndoCharges = 2;
+const startingStabilizeCharges = 1;
+const stabilizeDurationMs = 6000;
+const stabilizeGravityScale = 0.7;
+const stabilizeMergeSlopBonus = 1.6;
+const startingBombCharges = 1;
 
 const fruitStyles: FruitStyle[] = [
 	{
@@ -138,8 +147,12 @@ app.innerHTML = `
         <div class="hud-stats">
           <span id="fruit-count">0 fruits</span>
           <span id="score">0 pts</span>
+          <span id="assist-status" class="assist-status"></span>
         </div>
         <div class="hud-actions">
+          <button id="undo" type="button">Undo</button>
+          <button id="stabilize" type="button">Stabilize</button>
+          <button id="bomb" type="button" aria-pressed="false">Bomb</button>
           <button id="firehose" type="button" aria-pressed="false">Firehose</button>
           <button id="reset" type="button">Reset</button>
         </div>
@@ -154,6 +167,7 @@ app.innerHTML = `
           <span>next</span>
           <div id="next-preview" class="fruit-preview"></div>
         </div>
+        <div id="spawn-probabilities" class="spawn-probabilities" aria-label="spawn probabilities"></div>
       </div>
       <div id="playfield-wrap" class="playfield-wrap" style="--playfield-aspect-ratio: ${defaultSimulationConfig.playWidth} / ${defaultSimulationConfig.playHeight}">
         <canvas id="playfield" width="${defaultSimulationConfig.playWidth}" height="${defaultSimulationConfig.playHeight}" aria-label="clickable play area"></canvas>
@@ -169,11 +183,18 @@ app.innerHTML = `
 const canvas = requiredElement<HTMLCanvasElement>("#playfield");
 const resetButton = requiredElement<HTMLButtonElement>("#reset");
 const firehoseButton = requiredElement<HTMLButtonElement>("#firehose");
+const undoButton = requiredElement<HTMLButtonElement>("#undo");
+const stabilizeButton = requiredElement<HTMLButtonElement>("#stabilize");
+const bombButton = requiredElement<HTMLButtonElement>("#bomb");
 const countLabel = requiredElement<HTMLSpanElement>("#fruit-count");
 const scoreLabel = requiredElement<HTMLSpanElement>("#score");
+const assistStatusLabel = requiredElement<HTMLSpanElement>("#assist-status");
 const highScoresList = requiredElement<HTMLOListElement>("#high-scores");
 const currentPreview = requiredElement<HTMLDivElement>("#current-preview");
 const nextPreview = requiredElement<HTMLDivElement>("#next-preview");
+const spawnProbabilitiesLabel = requiredElement<HTMLDivElement>(
+	"#spawn-probabilities",
+);
 const gameOverOverlay = requiredElement<HTMLDivElement>("#game-over");
 const gameOverNote = requiredElement<HTMLSpanElement>("#game-over-note");
 const context = requiredCanvasContext(canvas);
@@ -182,25 +203,42 @@ const simulation = new GameSimulation({ now: performance.now() });
 let previousTime = performance.now();
 let highScores = loadHighScores();
 let isFirehoseActive = false;
+let isBombTargetingActive = false;
 let lastFirehoseDropTime = 0;
 let wasGameOver = false;
 let isOverhangWarningActive = false;
+let pointerClientX: number | null = null;
+let pointerClientY: number | null = null;
+let undoCharges = startingUndoCharges;
+let stabilizeCharges = startingStabilizeCharges;
+let bombCharges = startingBombCharges;
+let lastDropSnapshot: SimulationSnapshot | null = null;
+let lastDropAt = 0;
 
 function addFruit(clientX: number) {
 	if (simulation.isGameOver) {
 		return;
 	}
 
+	const beforeDrop = simulation.captureSnapshot();
 	const rect = canvas.getBoundingClientRect();
 	const scaleX = canvas.width / rect.width;
-	simulation.dropAt((clientX - rect.left) * scaleX, performance.now());
+	const now = performance.now();
+	const dropped = simulation.dropAt((clientX - rect.left) * scaleX, now);
+	if (dropped) {
+		lastDropSnapshot = beforeDrop;
+		lastDropAt = now;
+	}
 	syncHud();
 }
 
 function syncHud() {
 	updateCount();
 	updateScore();
+	updateAssistStatus();
 	updatePreviews();
+	updateSpawnProbabilities();
+	updateAssistButtons();
 	updateOverhangWarning();
 	syncGameOver();
 }
@@ -216,6 +254,16 @@ function updateScore() {
 	scoreLabel.textContent = `${formatScore(simulation.score)} pts`;
 }
 
+function updateAssistStatus() {
+	const now = performance.now();
+	const stabilizeActive = simulation.isStabilizeActive(now);
+	const undoReady =
+		lastDropSnapshot !== null && now - lastDropAt <= undoWindowMs && !simulation.isGameOver;
+	const bombMode = isBombTargetingActive ? "bomb: aim" : "bomb: idle";
+	const stabilizeText = stabilizeActive ? "stabilize: active" : "stabilize: ready";
+	assistStatusLabel.textContent = `undo ${undoCharges} (${undoReady ? "ready" : "spent"}) • ${stabilizeText} • bomb ${bombCharges} (${bombMode})`;
+}
+
 function updateHighScores() {
 	highScoresList.innerHTML = highScores
 		.map((entry) => `<li>${formatScore(entry.score)}</li>`)
@@ -229,6 +277,7 @@ function syncGameOver() {
 
 	wasGameOver = true;
 	setFirehose(false);
+	setBombMode(false);
 	const highScoreRank = admitHighScore(simulation.score);
 	gameOverOverlay.hidden = false;
 	canvas.classList.add("is-game-over");
@@ -259,6 +308,8 @@ function maybeRunFirehose(now: number) {
 	}
 
 	lastFirehoseDropTime = now;
+	lastDropSnapshot = simulation.captureSnapshot();
+	lastDropAt = now;
 	simulation.dropAt(simulation.config.playWidth / 2, now, {
 		enforceCooldown: false,
 	});
@@ -269,11 +320,24 @@ function setFirehose(isActive: boolean) {
 	lastFirehoseDropTime = 0;
 	firehoseButton.setAttribute("aria-pressed", String(isFirehoseActive));
 	firehoseButton.classList.toggle("is-active", isFirehoseActive);
+	if (isActive) {
+		setBombMode(false);
+	}
+}
+
+function setBombMode(isActive: boolean) {
+	isBombTargetingActive = isActive && bombCharges > 0 && !simulation.isGameOver;
+	bombButton.setAttribute("aria-pressed", String(isBombTargetingActive));
+	bombButton.classList.toggle("is-active", isBombTargetingActive);
+	if (isBombTargetingActive) {
+		setFirehose(false);
+	}
 }
 
 function render(now: number) {
 	context.clearRect(0, 0, canvas.width, canvas.height);
 	drawPlayfieldBackground();
+	drawTrajectoryPreview();
 
 	for (const fruit of simulation.fruits) {
 		drawFruit(fruit, now);
@@ -284,6 +348,69 @@ function render(now: number) {
 	}
 
 	drawPlayfieldOverlay();
+}
+
+function drawTrajectoryPreview() {
+	if (simulation.isGameOver || pointerClientX === null) {
+		return;
+	}
+
+	const rect = canvas.getBoundingClientRect();
+	const scaleX = canvas.width / rect.width;
+	const scaleY = canvas.height / rect.height;
+	const pointerX = (pointerClientX - rect.left) * scaleX;
+	const pointerY =
+		pointerClientY === null ? 0 : (pointerClientY - rect.top) * scaleY;
+	const level = simulation.currentDropLevel;
+	const radius = simulation.radiusForFruitLevel(level);
+	const bounds = {
+		left: simulation.config.playBorderWidth,
+		right: simulation.config.playWidth - simulation.config.playBorderWidth,
+		top: simulation.config.playBorderWidth,
+		bottom: simulation.config.playHeight - simulation.config.playBorderWidth,
+	};
+	const x = clamp(pointerX, bounds.left + radius, bounds.right - radius);
+	let landingY = bounds.bottom - radius;
+
+	for (const fruit of simulation.fruits) {
+		const dx = x - fruit.x;
+		const minDistance = radius + fruit.radius;
+		if (Math.abs(dx) >= minDistance) {
+			continue;
+		}
+		const dy = Math.sqrt(minDistance ** 2 - dx ** 2);
+		landingY = Math.min(landingY, fruit.y - dy);
+	}
+
+	landingY = clamp(landingY, bounds.top + radius + 6, bounds.bottom - radius);
+	context.save();
+	context.setLineDash([8, 10]);
+	context.strokeStyle = isBombTargetingActive ? "#dc2626" : "rgba(33, 31, 27, 0.45)";
+	context.lineWidth = 2;
+	context.beginPath();
+	context.moveTo(x, bounds.top + radius);
+	context.lineTo(x, landingY);
+	context.stroke();
+	context.setLineDash([]);
+	context.globalAlpha = isBombTargetingActive ? 0.18 : 0.2;
+	context.fillStyle = isBombTargetingActive ? "#dc2626" : "#2f7d63";
+	context.beginPath();
+	context.arc(x, landingY, radius, 0, Math.PI * 2);
+	context.fill();
+	context.restore();
+
+	if (isBombTargetingActive) {
+		context.save();
+		context.strokeStyle = "#dc2626";
+		context.lineWidth = 2;
+		context.beginPath();
+		context.moveTo(pointerX - 10, pointerY);
+		context.lineTo(pointerX + 10, pointerY);
+		context.moveTo(pointerX, pointerY - 10);
+		context.lineTo(pointerX, pointerY + 10);
+		context.stroke();
+		context.restore();
+	}
 }
 
 function drawPlayfieldBackground() {
@@ -306,6 +433,25 @@ function drawPlayfieldOverlay() {
 	context.strokeStyle = isOverhangWarningActive ? "#dc2626" : "#363127";
 	context.lineWidth = 4;
 	context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+
+	const overhangRatio = clamp(
+		simulation.outOfBoundsOverhang() / simulation.config.gameOverOverhangLimit,
+		0,
+		1,
+	);
+	if (overhangRatio > 0) {
+		const dangerBandHeight = Math.round(48 * overhangRatio);
+		context.fillStyle = `rgba(220, 38, 38, ${0.06 + overhangRatio * 0.12})`;
+		context.fillRect(0, 0, canvas.width, dangerBandHeight);
+		context.setLineDash([6, 8]);
+		context.strokeStyle = "rgba(220, 38, 38, 0.56)";
+		context.lineWidth = 2;
+		context.beginPath();
+		context.moveTo(0, dangerBandHeight);
+		context.lineTo(canvas.width, dangerBandHeight);
+		context.stroke();
+		context.setLineDash([]);
+	}
 }
 
 function drawFruit(fruit: Fruit, now: number) {
@@ -369,6 +515,17 @@ function updatePreviews() {
 	updatePreview(nextPreview, simulation.nextDropLevel);
 }
 
+function updateSpawnProbabilities() {
+	const probabilities = simulation.spawnProbabilities();
+	spawnProbabilitiesLabel.innerHTML = probabilities
+		.map(({ level, probability }) => {
+			const style = styleForFruitLevel(level);
+			const pct = Math.round(probability * 100);
+			return `<span class="spawn-probability-pill"><i style="background-image:url('${style.asset}')"></i>L${level} ${pct}%</span>`;
+		})
+		.join("");
+}
+
 function updatePreview(element: HTMLElement, level: number) {
 	const style = styleForFruitLevel(level);
 	const radius = simulation.radiusForFruitLevel(level);
@@ -395,6 +552,86 @@ function updateOverhangWarning() {
 
 	isOverhangWarningActive = shouldWarn;
 	canvas.classList.toggle("has-overhang-warning", shouldWarn);
+}
+
+function updateAssistButtons() {
+	const now = performance.now();
+	const undoReady =
+		undoCharges > 0 &&
+		lastDropSnapshot !== null &&
+		now - lastDropAt <= undoWindowMs &&
+		!simulation.isGameOver;
+	undoButton.disabled = !undoReady;
+	stabilizeButton.disabled =
+		stabilizeCharges <= 0 ||
+		simulation.isGameOver ||
+		simulation.isStabilizeActive(now);
+	bombButton.disabled = bombCharges <= 0 || simulation.isGameOver;
+}
+
+function useUndo() {
+	const now = performance.now();
+	if (
+		undoCharges <= 0 ||
+		!lastDropSnapshot ||
+		now - lastDropAt > undoWindowMs ||
+		simulation.isGameOver
+	) {
+		return;
+	}
+	simulation.restoreSnapshot(lastDropSnapshot);
+	undoCharges -= 1;
+	lastDropSnapshot = null;
+	lastDropAt = 0;
+	setFirehose(false);
+	setBombMode(false);
+	syncHud();
+}
+
+function useStabilize() {
+	if (
+		stabilizeCharges <= 0 ||
+		simulation.isGameOver ||
+		simulation.isStabilizeActive(performance.now())
+	) {
+		return;
+	}
+
+	const activated = simulation.activateStabilize(performance.now(), {
+		durationMs: stabilizeDurationMs,
+		gravityScale: stabilizeGravityScale,
+		mergeSlopBonus: stabilizeMergeSlopBonus,
+	});
+	if (!activated) {
+		return;
+	}
+	stabilizeCharges -= 1;
+	syncHud();
+}
+
+function useBomb(clientX: number, clientY: number) {
+	if (!isBombTargetingActive || bombCharges <= 0 || simulation.isGameOver) {
+		return false;
+	}
+
+	const rect = canvas.getBoundingClientRect();
+	const scaleX = canvas.width / rect.width;
+	const scaleY = canvas.height / rect.height;
+	const x = (clientX - rect.left) * scaleX;
+	const y = (clientY - rect.top) * scaleY;
+	const penalty = Math.max(500, Math.round(scoreForRadius(18) * 0.6));
+	const detonated = simulation.bombAt(x, y, performance.now(), {
+		scorePenalty: penalty,
+		maxTargetLevel: simulation.config.fruitLevels - 1,
+	});
+	if (!detonated) {
+		return false;
+	}
+
+	bombCharges -= 1;
+	setBombMode(false);
+	syncHud();
+	return true;
 }
 
 function admitHighScore(finalScore: number) {
@@ -537,18 +774,52 @@ function clamp(value: number, min: number, max: number) {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
+	if (isBombTargetingActive) {
+		useBomb(event.clientX, event.clientY);
+		return;
+	}
 	addFruit(event.clientX);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+	pointerClientX = event.clientX;
+	pointerClientY = event.clientY;
+});
+
+canvas.addEventListener("pointerleave", () => {
+	pointerClientX = null;
+	pointerClientY = null;
 });
 
 firehoseButton.addEventListener("click", () => {
 	setFirehose(!isFirehoseActive);
+	syncHud();
+});
+
+bombButton.addEventListener("click", () => {
+	setBombMode(!isBombTargetingActive);
+	syncHud();
+});
+
+undoButton.addEventListener("click", () => {
+	useUndo();
+});
+
+stabilizeButton.addEventListener("click", () => {
+	useStabilize();
 });
 
 resetButton.addEventListener("click", () => {
 	simulation.reset(performance.now());
 	wasGameOver = false;
 	isOverhangWarningActive = false;
+	undoCharges = startingUndoCharges;
+	stabilizeCharges = startingStabilizeCharges;
+	bombCharges = startingBombCharges;
+	lastDropSnapshot = null;
+	lastDropAt = 0;
 	setFirehose(false);
+	setBombMode(false);
 	gameOverOverlay.hidden = true;
 	canvas.classList.remove("is-game-over");
 	canvas.classList.remove("has-overhang-warning");
