@@ -122,6 +122,13 @@ h1 {
   line-height: 1.05;
 }
 
+.assist-status {
+  min-height: 1.1rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .hud-actions {
   position: fixed;
   top: 72px;
@@ -166,8 +173,7 @@ h1 {
   text-transform: none;
 }
 
-#reset,
-#firehose {
+.hud-actions button {
   min-height: 38px;
   padding: 0 13px;
   border: 2px solid var(--accent-dark);
@@ -179,10 +185,19 @@ h1 {
   font-size: 0.95rem;
 }
 
-#firehose {
+#firehose,
+#bomb {
   padding-inline: 12px;
   color: var(--accent-dark);
   background: rgba(255, 250, 240, 0.74);
+}
+
+#undo,
+#stabilize {
+  color: #ffffff;
+  background: #5d7f70;
+  border-color: #3c5e4f;
+  box-shadow: 0 3px 0 #3c5e4f;
 }
 
 .drop-previews {
@@ -230,21 +245,57 @@ h1 {
   text-transform: uppercase;
 }
 
-#reset:hover,
-#firehose:hover,
-#firehose.is-active {
+.spawn-probabilities {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  max-width: calc(100% - 130px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spawn-probability-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid rgba(46, 41, 34, 0.18);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 250, 240, 0.62);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.spawn-probability-pill i {
+  width: 14px;
+  height: 14px;
+  background: center / contain no-repeat;
+}
+
+.hud-actions button:hover,
+#firehose.is-active,
+#bomb.is-active {
   background: #358e70;
   color: #ffffff;
 }
 
-#reset:active,
-#firehose:active {
+.hud-actions button:disabled {
+  opacity: 0.48;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
+.hud-actions button:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 var(--accent-dark);
 }
 
-#reset:focus-visible,
-#firehose:focus-visible,
+.hud-actions button:focus-visible,
 #playfield:focus-visible {
   outline: 3px solid rgba(47, 125, 99, 0.42);
   outline-offset: 3px;
@@ -366,6 +417,11 @@ h1 {
     padding-inline: 12px;
   }
 
+  .spawn-probabilities {
+    max-width: calc(100% - 132px);
+    bottom: 4px;
+  }
+
   .current-preview {
     bottom: 12px;
   }
@@ -414,14 +470,18 @@ h1 {
     font-size: 1.2rem;
   }
 
-  #reset,
-  #firehose {
+  .hud-actions button {
     min-height: 34px;
     padding-inline: 10px;
   }
 
   .drop-previews {
     height: 62px;
+  }
+
+  .spawn-probability-pill {
+    font-size: 0.67rem;
+    padding-inline: 6px;
   }
 
   .playfield-wrap {

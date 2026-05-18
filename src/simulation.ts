@@ -19,32 +19,45 @@ export type MergeEffect = {
 	duration: number;
 };
 
+export type SimulationSnapshot = {
+	fruits: Fruit[];
+	mergeEffects: MergeEffect[];
+	currentDropLevel: number;
+	nextDropLevel: number;
+	isGameOver: boolean;
+	score: number;
+	drops: number;
+	nextFruitId: number;
+	nextEffectId: number;
+	lastDropTime: number;
+};
+
 export type SimulationConfig = typeof defaultSimulationConfig;
 
 export const defaultSimulationConfig = {
-	playWidth: 410,
-	playHeight: 520,
+	playWidth: 430,
+	playHeight: 560,
 	playBorderWidth: 4,
 	fruitLevels: 11,
 	generatedFruitLevels: 4,
 	baseFruitRadius: 12,
-	fruitRadiusScale: 1.33,
-	fruitRadiusScaleBreakLevel: 6,
-	fruitRadiusLargeScale: 1.2,
+	fruitRadiusScale: 1.29,
+	fruitRadiusScaleBreakLevel: 7,
+	fruitRadiusLargeScale: 1.16,
 	gravitySpeed: 980,
-	dropCooldownMs: 350,
-	gameOverOverhangLimit: 40,
-	warningOverhang: 0,
-	mergeContactSlop: 1,
+	dropCooldownMs: 420,
+	gameOverOverhangLimit: 56,
+	warningOverhang: 16,
+	mergeContactSlop: 2.5,
 	maxCascadeMerges: 24,
-	wallBounce: 0.08,
-	floorBounce: 0.18,
+	wallBounce: 0.06,
+	floorBounce: 0.12,
 	floorBounceMinSpeed: 90,
 	floorSettleSpeed: 28,
-	collisionDamping: 0.4,
+	collisionDamping: 0.26,
 	fallingImpactMinSpeed: 72,
 	verticalContactThreshold: 0.16,
-	contactSideImpulse: 44,
+	contactSideImpulse: 30,
 	contactLiftImpulse: 14,
 	fruitDrag: 0.01,
 	maxFruitMass: 42,
@@ -76,6 +89,9 @@ export class GameSimulation {
 	private nextEffectId = 1;
 	private lastDropTime: number;
 	private readonly random: () => number;
+	private stabilizeUntil = 0;
+	private stabilizeGravityScale = 1;
+	private stabilizeMergeSlopBonus = 0;
 
 	constructor(
 		options: {
@@ -128,9 +144,10 @@ export class GameSimulation {
 
 	step(deltaSeconds: number, now: number) {
 		const dt = Math.min(deltaSeconds, 1 / 30);
+		const physics = this.physicsStateAt(now);
 
 		for (const fruit of this.fruits) {
-			fruit.vy += this.config.gravitySpeed * dt;
+			fruit.vy += this.config.gravitySpeed * physics.gravityScale * dt;
 			fruit.y += fruit.vy * dt;
 			fruit.x += fruit.vx * dt;
 			this.resolveWalls(fruit);
@@ -164,7 +181,7 @@ export class GameSimulation {
 
 		this.applySettlingPressure();
 		this.pruneMergeEffects(now);
-		this.resolveMerges(now);
+		this.resolveMerges(now, physics.mergeContactSlopBonus);
 	}
 
 	radiusForFruitLevel(level: number) {
@@ -192,6 +209,119 @@ export class GameSimulation {
 			const fruitTop = fruit.y - fruit.radius;
 			return total + Math.max(0, bounds.top - fruitTop);
 		}, 0);
+	}
+
+	spawnProbabilities() {
+		return this.dropWeightTable().map(({ level, weight }) => ({
+			level,
+			probability: weight,
+		}));
+	}
+
+	captureSnapshot(): SimulationSnapshot {
+		return {
+			fruits: this.fruits.map((fruit) => ({ ...fruit })),
+			mergeEffects: this.mergeEffects.map((effect) => ({ ...effect })),
+			currentDropLevel: this.currentDropLevel,
+			nextDropLevel: this.nextDropLevel,
+			isGameOver: this.isGameOver,
+			score: this.score,
+			drops: this.drops,
+			nextFruitId: this.nextFruitId,
+			nextEffectId: this.nextEffectId,
+			lastDropTime: this.lastDropTime,
+		};
+	}
+
+	restoreSnapshot(snapshot: SimulationSnapshot) {
+		this.fruits.length = 0;
+		this.fruits.push(...snapshot.fruits.map((fruit) => ({ ...fruit })));
+		this.mergeEffects.length = 0;
+		this.mergeEffects.push(
+			...snapshot.mergeEffects.map((effect) => ({ ...effect })),
+		);
+		this.currentDropLevel = snapshot.currentDropLevel;
+		this.nextDropLevel = snapshot.nextDropLevel;
+		this.isGameOver = snapshot.isGameOver;
+		this.score = snapshot.score;
+		this.drops = snapshot.drops;
+		this.nextFruitId = snapshot.nextFruitId;
+		this.nextEffectId = snapshot.nextEffectId;
+		this.lastDropTime = snapshot.lastDropTime;
+		this.stabilizeUntil = 0;
+		this.stabilizeGravityScale = 1;
+		this.stabilizeMergeSlopBonus = 0;
+	}
+
+	activateStabilize(
+		now: number,
+		options: {
+			durationMs: number;
+			gravityScale: number;
+			mergeSlopBonus: number;
+		},
+	) {
+		if (options.durationMs <= 0) {
+			return false;
+		}
+
+		this.stabilizeUntil = now + options.durationMs;
+		this.stabilizeGravityScale = clamp(options.gravityScale, 0.3, 1);
+		this.stabilizeMergeSlopBonus = Math.max(0, options.mergeSlopBonus);
+		return true;
+	}
+
+	isStabilizeActive(now: number) {
+		return now < this.stabilizeUntil;
+	}
+
+	bombAt(
+		x: number,
+		y: number,
+		now: number,
+		options: {
+			scorePenalty: number;
+			maxTargetLevel?: number;
+		},
+	) {
+		if (this.isGameOver) {
+			return false;
+		}
+
+		const maxTargetLevel = options.maxTargetLevel ?? this.config.fruitLevels - 1;
+		let target: Fruit | null = null;
+		let targetDistance = Number.POSITIVE_INFINITY;
+
+		for (const fruit of this.fruits) {
+			if (fruit.level > maxTargetLevel) {
+				continue;
+			}
+
+			const distance = Math.hypot(x - fruit.x, y - fruit.y);
+			if (distance > fruit.radius * 1.1 || distance >= targetDistance) {
+				continue;
+			}
+
+			target = fruit;
+			targetDistance = distance;
+		}
+
+		if (!target) {
+			return false;
+		}
+
+		this.fruits.splice(this.fruits.indexOf(target), 1);
+		this.score = Math.max(0, this.score - Math.max(0, options.scorePenalty));
+		this.mergeEffects.push({
+			id: this.nextEffectId++,
+			x: target.x,
+			y: target.y,
+			radius: target.radius * 1.1,
+			level: target.level,
+			startedAt: now,
+			duration: Math.max(200, this.config.mergeBurstDuration * 0.9),
+		});
+		return true;
 	}
 
 	private spawnFruitAt(x: number, now: number) {
@@ -325,9 +455,9 @@ export class GameSimulation {
 		topFruit.vy -= this.config.contactLiftImpulse * strength * topResponse;
 	}
 
-	private resolveMerges(now: number) {
+	private resolveMerges(now: number, mergeContactSlopBonus: number) {
 		let cascadeCount = 0;
-		let mergePairs = this.findMergePairs();
+		let mergePairs = this.findMergePairs(mergeContactSlopBonus);
 
 		while (
 			mergePairs.length > 0 &&
@@ -355,11 +485,11 @@ export class GameSimulation {
 			this.fruits.push(...remainingFruits, ...mergedFruits);
 
 			cascadeCount += 1;
-			mergePairs = this.findMergePairs();
+			mergePairs = this.findMergePairs(mergeContactSlopBonus);
 		}
 	}
 
-	private findMergePairs(): Array<[Fruit, Fruit]> {
+	private findMergePairs(mergeContactSlopBonus: number): Array<[Fruit, Fruit]> {
 		const pairs: Array<[Fruit, Fruit]> = [];
 		const usedFruitIds = new Set<number>();
 
@@ -380,7 +510,10 @@ export class GameSimulation {
 				const dx = b.x - a.x;
 				const dy = b.y - a.y;
 				const contactDistance =
-					a.radius + b.radius + this.config.mergeContactSlop;
+					a.radius +
+					b.radius +
+					this.config.mergeContactSlop +
+					mergeContactSlopBonus;
 
 				if (Math.hypot(dx, dy) <= contactDistance) {
 					pairs.push([a, b]);
@@ -512,7 +645,74 @@ export class GameSimulation {
 	}
 
 	private randomDropLevel() {
-		return 1 + Math.floor(this.random() * this.config.generatedFruitLevels);
+		const weights = this.dropWeightTable();
+		const roll = this.random();
+		let cumulative = 0;
+
+		for (const entry of weights) {
+			cumulative += entry.weight;
+			if (roll <= cumulative) {
+				return entry.level;
+			}
+		}
+
+		return weights[weights.length - 1].level;
+	}
+
+	private dropWeightTable() {
+		const pressure = this.spawnPressure();
+		const exponent = 1 + pressure * 2.2;
+		const rawWeights: Array<{ level: number; weight: number }> = [];
+		let total = 0;
+
+		for (let level = 1; level <= this.config.generatedFruitLevels; level += 1) {
+			const base = this.config.generatedFruitLevels - level + 1;
+			const weight = base ** exponent;
+			rawWeights.push({ level, weight });
+			total += weight;
+		}
+
+		return rawWeights.map((entry) => ({
+			level: entry.level,
+			weight: entry.weight / total,
+		}));
+	}
+
+	private spawnPressure() {
+		if (this.fruits.length === 0) {
+			return 0;
+		}
+
+		const overhangPressure = clamp(
+			this.outOfBoundsOverhang() / this.config.gameOverOverhangLimit,
+			0,
+			1,
+		);
+		const bounds = this.playBounds();
+		const highestTop = this.fruits.reduce(
+			(current, fruit) => Math.min(current, fruit.y - fruit.radius),
+			bounds.bottom,
+		);
+		const heightPressure = clamp(
+			(bounds.bottom - highestTop) / (bounds.bottom - bounds.top),
+			0,
+			1,
+		);
+		return clamp(overhangPressure * 0.65 + heightPressure * 0.35, 0, 1);
+	}
+
+	private physicsStateAt(now: number) {
+		if (now >= this.stabilizeUntil) {
+			return {
+				gravityScale: 1,
+				mergeContactSlopBonus: 0,
+			};
+		}
+
+		return {
+			gravityScale: this.stabilizeGravityScale,
+			mergeContactSlopBonus: this.stabilizeMergeSlopBonus,
+		};
 	}
 }
 
